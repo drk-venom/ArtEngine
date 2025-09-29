@@ -2,12 +2,12 @@ import logging
 import requests
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-# Tokens
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-DEEPAI_API_KEY = "YOUR_DEEPAI_API_KEY"
-WEBHOOK_URL = "YOUR_RENDER_PUBLIC_URL"  # e.g., https://your-app.onrender.com/
+# Hardcoded tokens/keys (⚠️ not recommended for production)
+TELEGRAM_TOKEN = "8103733606:AAFfw4COXT-3hkpyepzZdaatfkbSv5NaAro"
+DEEPAI_API_KEY = "64c75589-7261-485f-8310-7167437c377c"
+WEBHOOK_URL = "https://artengine.onrender.com"
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TELEGRAM_TOKEN)
 app = Flask(__name__)
 
-# Telegram bot logic
+# --- Bot Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(r"💻 Developer: \/ēⁿ∅|\/|", url="https://t.me/Scarface_786")]
@@ -45,20 +45,16 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if "output_url" in response_json:
             image_url = response_json['output_url']
-            
             img_data = requests.get(image_url).content
-            with open("output.jpg", "wb") as f:
-                f.write(img_data)
 
             await status_msg.delete()
-            with open("output.jpg", "rb") as f:
-                await update.message.reply_photo(photo=f, caption=f"✨ Prompt: {prompt}")
+            await update.message.reply_photo(photo=img_data, caption=f"✨ Prompt: {prompt}")
         else:
             await status_msg.edit_text(f"⚠️ Error: {response_json}")
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error: {str(e)}")
 
-# Flask route for Telegram webhook
+# --- Flask Routes ---
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
     data = request.get_json(force=True)
@@ -66,7 +62,6 @@ def webhook():
     application.update_queue.put(update)
     return "OK"
 
-# Flask route for health check
 @app.route("/")
 def index():
     return "Bot is running!"
@@ -76,7 +71,7 @@ application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_image))
 
-# Set webhook on startup
+# Set webhook
 @app.before_first_request
 def set_webhook():
     bot.set_webhook(f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
