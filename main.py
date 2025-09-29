@@ -2,37 +2,31 @@ import logging
 import requests
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, CallbackQueryHandler, filters
-import asyncio
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
-# ⚠️ Hardcoded tokens (not for production)
+# Tokens
 TELEGRAM_TOKEN = "8103733606:AAFfw4COXT-3hkpyepzZdaatfkbSv5NaAro"
 DEEPAI_API_KEY = "64c75589-7261-485f-8310-7167437c377c"
-WEBHOOK_URL = "https://artengine.onrender.com"
+WEBHOOK_URL = "https://artengine.onrender.com"  # e.g., https://your-app.onrender.com/
 
+# Logging
 logging.basicConfig(level=logging.INFO)
 
-app = Flask(__name__)
 bot = Bot(token=TELEGRAM_TOKEN)
+app = Flask(__name__)
 
-# --- Bot Handlers ---
+# Telegram bot logic
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton(r"💻 Developer: \/ēⁿ∅|\/|", url="https://t.me/Scarface_786")],
-        [InlineKeyboardButton("🎨 Generate Image", callback_data="generate_image")]
+        [InlineKeyboardButton(r"💻 Developer: \/ēⁿ∅|\/|", url="https://t.me/Scarface_786")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
         "👋 Welcome! Send me any prompt and I'll generate an image...\n\n"
-        "Use the buttons below:",
+        "Use the button below to contact the developer:",
         reply_markup=reply_markup
     )
-
-async def generate_image_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ask user to send a prompt for image generation."""
-    await update.callback_query.answer()  # Acknowledge callback
-    await update.callback_query.message.reply_text("✏️ Send me a prompt and I’ll generate an image for you!")
 
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = update.message.text
@@ -51,44 +45,41 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if "output_url" in response_json:
             image_url = response_json['output_url']
+            
             img_data = requests.get(image_url).content
+            with open("output.jpg", "wb") as f:
+                f.write(img_data)
 
             await status_msg.delete()
-            
-            keyboard = [[InlineKeyboardButton("🎨 Generate Another", callback_data="generate_image")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await update.message.reply_photo(photo=img_data, caption=f"✨ Prompt: {prompt}", reply_markup=reply_markup)
+            with open("output.jpg", "rb") as f:
+                await update.message.reply_photo(photo=f, caption=f"✨ Prompt: {prompt}")
         else:
             await status_msg.edit_text(f"⚠️ Error: {response_json}")
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error: {str(e)}")
 
-# --- Flask Routes ---
+# Flask route for Telegram webhook
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
-    """Receive updates from Telegram via webhook."""
     data = request.get_json(force=True)
     update = Update.de_json(data, bot)
-    asyncio.create_task(application.process_update(update))
+    application.update_queue.put(update)
     return "OK"
 
+# Flask route for health check
 @app.route("/")
 def index():
     return "Bot is running!"
 
-# --- Build Telegram Application ---
+# Build application
 application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_image))
-application.add_handler(CallbackQueryHandler(generate_image_prompt, pattern="generate_image"))
 
-# --- Set webhook before first request ---
+# Set webhook on startup
 @app.before_first_request
 def set_webhook():
     bot.set_webhook(f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
-    logging.info("Webhook set successfully!")
 
-# --- Run Flask App ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
